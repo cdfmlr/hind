@@ -1,33 +1,45 @@
 package cgroups
 
+// This file defined the V1fsManager, a Manager implementation
+// based on the cgroup v1 filesystem.
+
 import (
 	"fmt"
-	"golang.org/x/exp/slog"
 	"os"
 	"path"
 	"reflect"
+
+	"github.com/google/uuid"
+	"golang.org/x/exp/slog"
 )
 
-// V1fsResource interface to cgroup v1 filesystem
-type V1fsResource interface {
-	Resource
-	// V1fsPath returns the config file path to the resource.
-	// basePath is the mount point of cgroup v1 filesystem ("/sys/fs/cgroup/")
-	V1fsPath(basePath string, containerId string) string
-}
-
 // V1fsManager is a cgroup Manager talks to the cgroup v1 filesystem.
+//
+// The Resources items should implement the V1fsResource interface to
+// make them V1fsManager compatible.
 type V1fsManager struct {
 	// BasePath is the mount point of cgroup v1 filesystem ("/sys/fs/cgroup/"):
 	//  assert $(stat -fc %T /sys/fs/cgroup/) == tmpfs
 	BasePath string
 	// CgName is the name of the cgroup:
 	//  /sys/fs/cgroup/cpu/<CgName>/cpu.shares
-	CgroupName string
+	cgroupName string
 }
 
+// -- implement Manager interface --
+
 func (v *V1fsManager) Create(name string) error {
-	v.CgroupName = name
+	if _, err := v.checkBasePath(); err != nil {
+		return err
+	}
+	if v.cgroupName != "" {
+		return fmt.Errorf("cgroup name already set: %s", v.cgroupName)
+	}
+	if name == "" {
+		return fmt.Errorf("cgroup name cannot be empty")
+	}
+
+	v.cgroupName = name
 	for _, subsystem := range supportedSubsystem() {
 		p := v.subsystemDir(subsystem)
 		if err := mkdirIfNotExists(p); err != nil {
@@ -37,27 +49,14 @@ func (v *V1fsManager) Create(name string) error {
 	return nil
 }
 
-// subsystemDir returns /sys/fs/cgroup/<subsystem>/<CgroupName>/
-func (v *V1fsManager) subsystemDir(subsystem string) string {
-	return path.Join(v.BasePath, subsystem, v.CgroupName)
-}
-
-// taskFile returns /sys/fs/cgroup/<subsystem>/<CgroupName>/tasks
-func (v *V1fsManager) taskFile(subsystem string) string {
-	return path.Join(v.subsystemDir(subsystem), "tasks")
-}
-
-func mkdirIfNotExists(dirPath string) error {
-	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		err := os.MkdirAll(dirPath, 0755)
-		if err != nil {
-			return fmt.Errorf("error creating directory: %w", err)
-		}
-	}
-	return nil
-}
-
 func (v *V1fsManager) Apply(pid int) error {
+	if _, err := v.checkBasePath(); err != nil {
+		return err
+	}
+	if _, err := v.checkCreated(); err != nil {
+		return err
+	}
+
 	for _, subsystem := range supportedSubsystem() {
 		tasksFile := v.taskFile(subsystem)
 		if err := appendFile(tasksFile, fmt.Sprint(pid)); err != nil {
@@ -68,7 +67,14 @@ func (v *V1fsManager) Apply(pid int) error {
 }
 
 func (v *V1fsManager) Set(res Resources) error {
-	resources := reflect.ValueOf(res).Elem()
+	if _, err := v.checkBasePath(); err != nil {
+		return err
+	}
+	if _, err := v.checkCreated(); err != nil {
+		return err
+	}
+
+	resources := reflect.ValueOf(res)
 	for i := 0; i < resources.NumField(); i++ {
 		field := resources.Field(i)
 		if field.IsZero() {
@@ -88,7 +94,7 @@ func (v *V1fsManager) setResource(r Resource) error {
 	}
 	v1res := r.(V1fsResource)
 
-	filePath := v1res.V1fsPath(v.BasePath, v.CgroupName)
+	filePath := v1res.V1fsPath(v.BasePath, v.cgroupName)
 	err := overwriteFile(filePath, v1res.Value())
 	if err != nil {
 		return err
@@ -101,7 +107,80 @@ func (v *V1fsManager) Destroy() {
 	slog.Warn("TODO: Destroy a cgroup")
 }
 
+// -- path methods --
+
+// subsystemDir returns /sys/fs/cgroup/<subsystem>/<CgroupName>/
+func (v *V1fsManager) subsystemDir(subsystem string) string {
+	return path.Join(v.BasePath, subsystem, v.cgroupName)
+}
+
+// taskFile returns /sys/fs/cgroup/<subsystem>/<CgroupName>/tasks
+func (v *V1fsManager) taskFile(subsystem string) string {
+	return path.Join(v.subsystemDir(subsystem), "cgroup.procs")
+}
+
+// -- check methods --
+
+const defaultCgroupV1FsBasePath = "/sys/fs/cgroup/"
+
+// checkBasePath checks if BasePath is set, if not, set it to default.
+//
+// Return:
+//   - true if BasePath is set
+//   - false if BasePath is not set and set it to default
+//   - error if BasePath is not a cgroup v1 filesystem.
+func (v *V1fsManager) checkBasePath() (bool, error) {
+	set := v.BasePath != ""
+
+	if !set {
+		slog.Warn("cgroup v1 base path not set, using default",
+			"defaultCgroupV1FsBasePath", defaultCgroupV1FsBasePath)
+		v.BasePath = defaultCgroupV1FsBasePath
+	}
+
+	if stat, err := os.Stat(v.BasePath); err != nil {
+		return set, fmt.Errorf("error checking cgroup v1 base path: %w", err)
+	} else if !stat.IsDir() {
+		return set, fmt.Errorf("cgroup v1 base path is not a directory: %s", v.BasePath)
+	}
+	if err := assertFsType(v.BasePath, "tmpfs"); err != nil {
+		return set, err
+	}
+
+	return set, nil
+}
+
+// checkCreated checks if the cgroup is created.
+// If not, create it with a random name.
+//
+// Return:
+//   - true, nil -> already created
+//   - false, nil -> created here with random name successfully
+//   - false, err -> error creating
+func (v *V1fsManager) checkCreated() (bool, error) {
+	if v.cgroupName != "" {
+		return true, nil
+	}
+
+	randName := randCgroupName()
+
+	slog.Warn("cgroup name not set, do Create() with random name", "randName", randName)
+
+	err := v.Create(randName)
+	return false, err
+}
+
+// -- helper functions --
+// TODO: move to utils.go if can be reused
+
 // v1fsPath: <basePath>/<subsystem>/<cgroupName>/<fileName>
 func v1fsPath(basePath, subsystem, cgroupName, fileName string) string {
 	return path.Join(basePath, subsystem, cgroupName, fileName)
+}
+
+// randCgroupName() returns a random cgroup name:
+//
+//	"hind_{uuid}"
+func randCgroupName() string {
+	return "hind_" + uuid.NewString()
 }
