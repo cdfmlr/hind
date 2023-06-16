@@ -1,0 +1,184 @@
+diff --git a/cgroups/v1fs.go b/cgroups/v1fs.go
+index 3bef51b..f67c7ad 100644
+--- a/cgroups/v1fs.go
++++ b/cgroups/v1fs.go
+@@ -26,6 +26,20 @@ type V1fsManager struct {
+ 	cgroupName string
+ }
+ 
++// NewV1fsManager is a shortcut of:
++//
++//	m := &V1fsManager{BasePath}
++//	m.Create(cgroupName)
++func NewV1fsManager(basePath string, cgroupName string) (Manager, error) {
++	m := &V1fsManager{
++		BasePath: basePath,
++	}
++
++	err := m.Create(cgroupName)
++
++	return m, err
++}
++
+ // -- implement Manager interface --
+ 
+ func (v *V1fsManager) Create(name string) error {
+diff --git a/container/pid1.go b/container/pid1.go
+index dfc9c4a..7303f83 100644
+--- a/container/pid1.go
++++ b/container/pid1.go
+@@ -9,9 +9,11 @@ import (
+ )
+ 
+ // NewParentProcess creates a PID 1 process for container.
+-func NewParentProcess(tty bool, command []string) *exec.Cmd {
+-	args := append([]string{"init"}, command...)
+-	cmd := exec.Command("/proc/self/exe", args...)
++//
++// It returns the command and a pipe to send init command to the process.
++// The command is executed in the host.
++func NewParentProcess(tty bool, cmdPipeR *os.File) (cmd *exec.Cmd) {
++	cmd = exec.Command("/proc/self/exe", "init")
+ 
+ 	cmd.SysProcAttr = &syscall.SysProcAttr{
+ 		Cloneflags: syscall.CLONE_NEWUTS |
+@@ -27,6 +29,9 @@ func NewParentProcess(tty bool, command []string) *exec.Cmd {
+ 		cmd.Stdin = os.Stdin
+ 	}
+ 
++	// file descriptor 3 to receive init command
++	cmd.ExtraFiles = []*os.File{cmdPipeR}
++
+ 	return cmd
+ }
+ 
+@@ -34,21 +39,60 @@ func NewParentProcess(tty bool, command []string) *exec.Cmd {
+ //
+ // It is executed as the PID 1 inside the container.
+ // And than core-replaced by the command.
+-func RunContainerInitProcess(command []string) error {
+-	if len(command) < 1 {
+-		slog.Error("[container] RunContainerInitProcess: empty command, nothing to do.")
+-		return ErrEmptyCommand
++func RunContainerInitProcess() error {
++	command, err := recvAndCheckCommand()
++	if err != nil {
++		return err
++	}
++
++	setupMount()
++
++	return execve(command)
++}
++
++// recvAndCheckCommand wraps recvCommand.
++func recvAndCheckCommand() ([]string, error) {
++	command, err := recvCommand()
++	if err != nil {
++		slog.Error("[container] RunContainerInitProcess: failed to read command", "err", err)
++		return nil, err
+ 	}
+ 
++	if command == nil || len(command) == 0 {
++		slog.Error("[container] RunContainerInitProcess: empty command")
++		return nil, ErrEmptyCommand
++	}
+ 	slog.Info("[container] RunContainerInitProcess", "command", command)
+ 
++	return command, nil
++}
++
++func setupMount() {
+ 	// 阻断 shared subtree: mount --make-rprivate /
+ 	syscall.Mount("", "/", "", uintptr(syscall.MS_PRIVATE|syscall.MS_REC), "")
+ 
++	wd, err := os.Getwd()
++	if err != nil {
++		slog.Error("[container] RunContainerInitProcess: failed to get working directory", "err", err)
++		return
++	}
++	slog.Info("[container] RunContainerInitProcess: working directory", "wd", wd)
++	pivotRoot(wd)
++
+ 	// 挂进程: NOEXEC: 不允许其他程序运行，NOSUID 不允许 set uid
+ 	syscall.Mount("proc", "/proc", "proc", uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
++}
++
++// execve looks for the command and replaces the current process with it.
++func execve(command []string) error {
++	exe, err := exec.LookPath(command[0])
++	if err != nil {
++		slog.Error("[container] RunContainerInitProcess: failed to find command", "err", err)
++		return err
++	}
++	slog.Info("[container] RunContainerInitProcess: found command", "exe", exe)
+ 
+-	if err := syscall.Exec(command[0], command[:], os.Environ()); err != nil {
++	if err := syscall.Exec(exe, command[:], os.Environ()); err != nil {
+ 		slog.Error("[container] RunContainerInitProcess: execve failed", "err", err)
+ 	}
+ 
+diff --git a/container/run.go b/container/run.go
+index 8fde3a8..0923698 100644
+--- a/container/run.go
++++ b/container/run.go
+@@ -2,6 +2,10 @@ package container
+ 
+ import (
+ 	"errors"
++	"hind/cgroups"
++	"io"
++	"os"
++	"strings"
+ 
+ 	"golang.org/x/exp/slog"
+ )
+@@ -9,7 +13,7 @@ import (
+ // Run creates a container and runs the command in it.
+ //
+ // This function is executed in the host namespace.
+-func Run(tty bool, command []string) error {
++func Run(tty bool, command []string, res cgroups.Resources) error {
+ 	if len(command) < 1 {
+ 		slog.Error("[container] Run: empty command, nothing to do.")
+ 		return ErrEmptyCommand
+@@ -17,12 +21,37 @@ func Run(tty bool, command []string) error {
+ 
+ 	slog.Info("[container] Run", "tty", tty, "command", command)
+ 
+-	parent := NewParentProcess(tty, command)
++	cmdPipeR, cmdPipeW, err := os.Pipe()
++	if err != nil {
++		slog.Error("[container] NewParentProcess: failed to create pipe", "err", err)
++		return err
++	}
++	defer cmdPipeW.Close()
++
++	parent := NewParentProcess(tty, cmdPipeR)
++	
++
++	// slog.Info("[container] NewParentProcess: exec", "command", parent.Args)
+ 
+-	slog.Info("[container] NewParentProcess: exec", "command", parent.Args)
+ 	if err := parent.Start(); err != nil {
+ 		slog.Error("[container] Failed to start the parent process", "err", err)
+ 	}
++
++	// cgroup setup
++	cgroupManager, err := cgroups.NewV1fsManager("/sys/fs/cgroup/", "hind/container")
++	if err != nil {
++		slog.Error("[container] Failed to create cgroup manager. kill the process", "err", err)
++		// return err
++		parent.Process.Kill()
++	}
++	defer cgroupManager.Destroy()
++
++	cgroupManager.Set(res)
++	cgroupManager.Apply(parent.Process.Pid)
++
++	// send init command
++	writePipe.WriteString(strings.Join(command, " "))
++
+ 	parent.Wait()
+ 	return nil
+ }
