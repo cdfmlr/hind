@@ -1,7 +1,6 @@
 package container
 
 import (
-	"errors"
 	"hind/cgroups"
 	"os"
 
@@ -11,7 +10,9 @@ import (
 // Run creates a container and runs the command in it.
 //
 // This function is executed in the host namespace.
-func Run(tty bool, command []string, res cgroups.Resources) error {
+//
+// rootDir is the root directory of the container.
+func Run(tty bool, rootDir string, command []string, res cgroups.Resources) error {
 	slog.Info("[host] Run command in container.", "tty", tty, "command", command, "resources", res)
 	if len(command) < 1 {
 		slog.Error("[host] Run: empty command, nothing to do.")
@@ -50,7 +51,12 @@ func Run(tty bool, command []string, res cgroups.Resources) error {
 	slog.Info("[host] Cgroup setup done.", "pid", container.Process.Pid, "resources", res, "manager", cgroupManager)
 
 	// send the command
-	sendCommand(command, cmdPipeW)
+	config := &ConatinerConfig{
+		RootDir: rootDir,
+		Command: command,
+	}
+
+	sendConfig(config, cmdPipeW)
 	slog.Info("[host] Command sent, closing the pipe (w).")
 	cmdPipeW.Close()
 
@@ -60,7 +66,3 @@ func Run(tty bool, command []string, res cgroups.Resources) error {
 
 	return nil
 }
-
-var (
-	ErrEmptyCommand = errors.New("empty command")
-)

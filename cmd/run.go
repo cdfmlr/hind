@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"hind/cgroups"
 	"hind/container"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slog"
@@ -27,6 +29,19 @@ func runCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			opts.Image = args[0]
+
+			// history compatibility: NOIMG -> /
+			for _, noimg := range []string{"noimg"} {
+				if strings.ToLower(opts.Image) == noimg {
+					slog.Warn("no image specified, use / as rootfs.")
+					opts.Image = "/"
+				}
+			}
+
+			if _, err := os.Stat(opts.Image); err != nil {
+				return fmt.Errorf("bad image: %w", err)
+			}
+
 			if len(args) > 1 {
 				opts.Command = args[1:]
 			}
@@ -61,7 +76,7 @@ func runCommand() *cobra.Command {
 
 func runRun(opts runOptions) {
 	slog.Info("[cmd/run] Create and run a new container.", "opts", opts)
-	err := container.Run(opts.Tty || opts.Interactive, opts.Command, opts.Resources)
+	err := container.Run(opts.Tty || opts.Interactive, opts.Image, opts.Command, opts.Resources)
 	if err != nil {
 		os.Exit(1)
 	}

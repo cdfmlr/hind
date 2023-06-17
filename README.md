@@ -77,3 +77,30 @@ $ top
   PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
 10269 root      20   0    8348   1624    532 R  93.8  0.0   0:04.86 stress
 ```
+
+### Image
+
+可以使用 `docker export` 把一个 Docker「容器」导出为一个 hind「镜像」（TODO: 直接用 Docker 镜像作为 hind 镜像）：
+
+```sh
+docker run hello-world
+docker ps -a | grep hello-world # | cut -d ' ' -f 1 # 总之就是获取容器 ID
+sudo docker export -o hello-world.tar c3117d3a1c4c
+
+mkdir hello-world && tar -xvf hello-world.tar -C hello-world
+./hello-world/hello # 里面打包的一个可执行文件，本机可运行
+```
+
+在容器运行 `hind run -ti <image> <command>`，其中 image 为解压出来的镜像根目录：
+
+```sh
+sudo go run . run -it ./hello-world/ /hello
+```
+
+使用「host 自身」作为「镜像」：将 `<image>` 设为 `/`即可:  
+
+```sh
+sudo go run . run -it / uname -a
+```
+
+- 历史兼容: 也可以用 `NOIMG` 作为 image，等价于使用 `/`。

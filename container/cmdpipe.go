@@ -2,42 +2,53 @@ package container
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 
 	"golang.org/x/exp/slog"
 )
 
-// sendCommand writes the init command to the pipe.
+// ConatinerConfig is the configuration to initialize a container.
+// It is sent from the host to the container through a pipe.
+type ConatinerConfig struct {
+	RootDir string
+	Command []string
+}
+
+// sendConfig writes the init command to the pipe.
 // The command is json encoded:
 //
 //	["/bin/sh", "-c", "echo hello"]
 //
 // This function is executed in the host.
 // Use recvCommand() in the container to read the sent command.
-func sendCommand(command []string, cmdPipeW io.Writer) error {
-	slog.Debug("sendCommand: Sending command", "cmd", command)
-	return json.NewEncoder(cmdPipeW).Encode(command)
+func sendConfig(config *ConatinerConfig, cmdPipeW io.Writer) error {
+	if config == nil {
+		return fmt.Errorf("sendCommand: config is nil.")
+	}
+	slog.Debug("sendCommand: Sending command", "config", config)
+	return json.NewEncoder(cmdPipeW).Encode(config)
 }
 
-// recvCommand reads the command sent by sendCommand() through the pipe.
+// recvConfig reads the command sent by sendCommand() through the pipe.
 // The received command should be json encoded:
 //
 //	["/bin/sh", "-c", "echo hello"]
 //
 // This function is executed in the container.
-func recvCommand() ([]string, error) {
+func recvConfig() (*ConatinerConfig, error) {
 	pipe := os.NewFile(uintptr(3), "pipe")
 
-	cmdJson, err := io.ReadAll(pipe)
+	cfgJson, err := io.ReadAll(pipe)
 	if err != nil {
 		slog.Debug("recvCommand: read command from pipe error", "err", err)
 		return nil, err
 	}
-	slog.Debug("recvCommand: Command received", "cmd", string(cmdJson))
+	slog.Debug("recvCommand: Command received", "cmd", string(cfgJson))
 
-	var cmd []string
-	json.Unmarshal(cmdJson, &cmd)
+	var config ConatinerConfig
+	json.Unmarshal(cfgJson, &config)
 
-	return cmd, nil
+	return &config, nil
 }
