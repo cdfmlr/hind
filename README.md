@@ -104,3 +104,26 @@ sudo go run . run -it / uname -a
 ```
 
 - 历史兼容: 也可以用 `NOIMG` 作为 image，等价于使用 `/`。
+
+Alpine: 
+
+```sh
+$ /bin/cat /etc/os-release
+NAME="CentOS Linux"
+VERSION="7 (Core)"
+ID="centos"
+ID_LIKE="rhel fedora"
+VERSION_ID="7"
+PRETTY_NAME="CentOS Linux 7 (Core)"
+ANSI_COLOR="0;31"
+CPE_NAME="cpe:/o:centos:centos:7"
+HOME_URL="https://www.centos.org/"
+BUG_REPORT_URL="https://bugs.centos.org/"
+$ sudo ./hind run -ti images/alpine /bin/cat /etc/os-release
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.18.2
+PRETTY_NAME="Alpine Linux v3.18"
+HOME_URL="https://alpinelinux.org/"
+BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
+```

@@ -94,6 +94,8 @@ func setupMount(rootDir string) {
 
 	// 挂进程: NOEXEC: 不允许其他程序运行，NOSUID 不允许 set uid
 	syscall.Mount("proc", "/proc", "proc", uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
+
+	syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
 }
 
 // pivotRoot changes the root file system to the path newRoot.

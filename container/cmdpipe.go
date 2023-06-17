@@ -12,8 +12,10 @@ import (
 // ConatinerConfig is the configuration to initialize a container.
 // It is sent from the host to the container through a pipe.
 type ConatinerConfig struct {
-	RootDir string
-	Command []string
+	ContainerID string
+	ImagePath   string
+	RootDir     string
+	Command     []string
 }
 
 // sendConfig writes the init command to the pipe.
