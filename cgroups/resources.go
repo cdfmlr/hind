@@ -64,6 +64,17 @@ func (c CpuSetCpus) V1fsPath(basePath string, containerId string) string {
 	return v1fsPath(basePath, SubsystemCpuSet, containerId, "cpuset.cpus")
 }
 
+// CpuSetMems is the cpuset.mems
+type CpuSetMems string
+
+func (c CpuSetMems) Value() string {
+	return string(c)
+}
+
+func (c CpuSetMems) V1fsPath(basePath string, containerId string) string {
+	return v1fsPath(basePath, SubsystemCpuSet, containerId, "cpuset.mems")
+}
+
 // MemoryLimitBytes sets memory.limit_in_bytes
 type MemoryLimitBytes uint64
 

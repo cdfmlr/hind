@@ -11,7 +11,7 @@ import (
 
 // echo $line >> $filePath
 func appendFile(filePath string, line string) error {
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
@@ -24,7 +24,7 @@ func appendFile(filePath string, line string) error {
 
 // echo $content > $filePath
 func overwriteFile(filePath string, content string) error {
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // xxx: use Create instead
+	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644) // xxx: use Create instead
 	if err != nil {
 		return err
 	}

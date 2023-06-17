@@ -18,6 +18,7 @@ type Manager interface {
 	Apply(pid int) error
 
 	// Set sets cgroup resources parameters/limits.
+	// XXX: should be *Resources?
 	Set(res Resources) error
 
 	// Destroy removes cgroup.

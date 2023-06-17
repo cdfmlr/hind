@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"hind/cgroups"
 	"hind/container"
 	"os"
 
@@ -13,6 +14,7 @@ type runOptions struct {
 	Interactive bool
 	Image       string
 	Command     []string // COMMAND ARG...
+	Resources   cgroups.Resources
 }
 
 func runCommand() *cobra.Command {
@@ -43,6 +45,12 @@ func runCommand() *cobra.Command {
 	flags.BoolVarP(&opts.Tty, "tty", "t", false, "Allocate a pseudo-TTY")
 	flags.BoolVarP(&opts.Interactive, "interactive", "i", false, "Keep STDIN open")
 
+	// resources
+	flags.Int64Var((*int64)(&opts.Resources.CpuQuotaUs), "cpu-quota-us", 0, "The CPU hardcap limit (in usecs). Allowed cpu time in a given period.")
+	flags.Uint64Var((*uint64)(&opts.Resources.CpuPeriodUs), "cpu-period-us", 0, "CPU period to be used for hardcapping (in usecs). 0 to use system default.")
+	flags.StringVar((*string)(&opts.Resources.CpuSetCpus), "cpuset-cpus", "", "The requested CPUs to be used by tasks within this cgroup: 0-4,6,8-10")
+	flags.Uint64Var((*uint64)(&opts.Resources.MemoryLimitBytes), "memory-limit-bytes", 0, "Memory limit in bytes")
+
 	// SetInterspersed to false to support:
 	//  docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
 	// parse flags after IMAGE as ARGS instead of OPTIONS
@@ -52,8 +60,8 @@ func runCommand() *cobra.Command {
 }
 
 func runRun(opts runOptions) {
-	slog.Debug("cmd: runRun", "opts", opts)
-	err := container.Run(opts.Tty || opts.Interactive, opts.Command)
+	slog.Info("[cmd/run] Create and run a new container", "opts", opts)
+	err := container.Run(opts.Tty || opts.Interactive, opts.Command, opts.Resources)
 	if err != nil {
 		os.Exit(1)
 	}

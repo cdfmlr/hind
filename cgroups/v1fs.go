@@ -26,6 +26,20 @@ type V1fsManager struct {
 	cgroupName string
 }
 
+// NewV1fsManager is a shortcut of:
+//
+//	m := &V1fsManager{BasePath}
+//	m.Create(cgroupName)
+func NewV1fsManager(basePath string, cgroupName string) (Manager, error) {
+	m := &V1fsManager{
+		BasePath: basePath,
+	}
+
+	err := m.Create(cgroupName)
+
+	return m, err
+}
+
 // -- implement Manager interface --
 
 func (v *V1fsManager) Create(name string) error {
@@ -46,6 +60,16 @@ func (v *V1fsManager) Create(name string) error {
 			return err
 		}
 	}
+
+	// In my practice, the cpuset.cpus and cpuset.mems are required 
+	// to be set first, or any other resources will fail to set.
+	if err := v.setResource(CpuSetCpus("0")); err != nil {
+		return fmt.Errorf("error init cpuset.cpus: %w", err)
+	}
+	if err := v.setResource(CpuSetMems("0")); err != nil {
+		return fmt.Errorf("error init cpuset.mems: %w", err)
+	}
+
 	return nil
 }
 
@@ -94,17 +118,16 @@ func (v *V1fsManager) setResource(r Resource) error {
 	}
 	v1res := r.(V1fsResource)
 
+	slog.Info("[cgroups] V1fsManager setResource", "value", v1res.Value(), "target", v1res.V1fsPath(v.BasePath, v.cgroupName))
+
 	filePath := v1res.V1fsPath(v.BasePath, v.cgroupName)
 	err := overwriteFile(filePath, v1res.Value())
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 func (v *V1fsManager) Destroy() {
-	slog.Warn("TODO: Destroy a cgroup")
+	slog.Warn("[cgroups] TODO: V1fsManager.Destroy()")
 }
 
 // -- path methods --
