@@ -16,6 +16,7 @@ import (
 // This function is executed in the host.
 // Use recvCommand() in the container to read the sent command.
 func sendCommand(command []string, cmdPipeW io.Writer) error {
+	slog.Debug("sendCommand: Sending command", "cmd", command)
 	return json.NewEncoder(cmdPipeW).Encode(command)
 }
 
@@ -30,10 +31,10 @@ func recvCommand() ([]string, error) {
 
 	cmdJson, err := io.ReadAll(pipe)
 	if err != nil {
-		slog.Error("read command from pipe error", "err", err)
+		slog.Debug("recvCommand: read command from pipe error", "err", err)
 		return nil, err
 	}
-	slog.Debug("[container] Command received", "cmd", string(cmdJson))
+	slog.Debug("recvCommand: Command received", "cmd", string(cmdJson))
 
 	var cmd []string
 	json.Unmarshal(cmdJson, &cmd)

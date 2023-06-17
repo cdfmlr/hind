@@ -40,14 +40,14 @@ func NewParentProcess(tty bool, cmdPipeR *os.File) (cmd *exec.Cmd) {
 // It is executed as the PID 1 inside the container.
 // And than core-replaced by the command.
 func RunContainerInitProcess() error {
-	slog.Info("[container] RunContainerInitProcess: bootstrapping container")
+	slog.Info("[container] pid 1: bootstrapping...")
 	command, err := recvAndCheckCommand()
 	if err != nil {
 		return err
 	}
 
 	setupMount()
-	slog.Info("[container] pid 1 setup mount")
+	slog.Info("[container] pid 1 setup mount.")
 
 	return execve(command)
 }
@@ -56,15 +56,15 @@ func RunContainerInitProcess() error {
 func recvAndCheckCommand() ([]string, error) {
 	command, err := recvCommand()
 	if err != nil {
-		slog.Error("[container] pid 1 failed to receive command", "err", err)
+		slog.Error("[container] pid 1 failed to receive command.", "err", err)
 		return nil, err
 	}
 
 	if len(command) == 0 {
-		slog.Error("[container] pid 1 received empty command")
+		slog.Error("[container] pid 1 received empty command.")
 		return nil, ErrEmptyCommand
 	}
-	slog.Info("[container] pid 1 received command", "command", command)
+	slog.Info("[container] pid 1 received command.", "command", command)
 
 	return command, nil
 }
@@ -89,14 +89,14 @@ func setupMount() {
 func execve(command []string) error {
 	exe, err := exec.LookPath(command[0])
 	if err != nil {
-		slog.Error("[container] pid1 failed to find command", "err", err)
+		slog.Error("[container] pid1 failed to find command.", "err", err)
 		return err
 	}
-	slog.Info("[container] pid 1 found command in path", "exe", exe)
+	slog.Info("[container] pid 1 found command in path.", "exe", exe)
 
 	slog.Info("[container] pid 1 ready to execve the command. Bootstrapping done. Bye.", "command", command)
 	if err := syscall.Exec(exe, command[:], os.Environ()); err != nil {
-		slog.Error("[container] pid 1: execve failed", "err", err)
+		slog.Error("[container] pid 1: execve failed.", "err", err)
 	}
 
 	return nil

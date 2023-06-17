@@ -29,7 +29,7 @@ func initCommand() *cobra.Command {
 }
 
 func runBoot() {
-	slog.Info("[cmd/init] Booting container")
+	slog.Info("[cmd/init] Booting container...")
 	err := container.RunContainerInitProcess()
 	if err != nil {
 		os.Exit(1)
