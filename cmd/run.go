@@ -76,7 +76,15 @@ func runCommand() *cobra.Command {
 
 func runRun(opts runOptions) {
 	slog.Info("[cmd/run] Create and run a new container.", "opts", opts)
-	err := container.Run(opts.Tty || opts.Interactive, opts.Image, opts.Command, opts.Resources)
+
+	c := &container.Container{
+		TTY:       opts.Tty || opts.Interactive,
+		ImagePath: opts.Image,
+		Command:   opts.Command,
+		Resources: &opts.Resources,
+	}
+
+	err := container.Run(c)
 	if err != nil {
 		os.Exit(1)
 	}

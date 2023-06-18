@@ -127,3 +127,17 @@ PRETTY_NAME="Alpine Linux v3.18"
 HOME_URL="https://alpinelinux.org/"
 BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
 ```
+
+Hind 现已反哺其自身的开发了。使用 hind 来测试 hind，避免可能的错误破坏宿主环境：
+
+```sh
+$ sudo go run . run -ti NOIMG sh -c "cd /home/foo/writingadocker/hind; go test -v -run Test_initOverlayFS ./container && go test -v -run Test_destroyOverlayFS ./container"
+=== RUN   Test_initOverlayFS
+--- PASS: Test_initOverlayFS (0.01s)
+PASS
+ok      hind/container  0.008s
+=== RUN   Test_destroyOverlayFS
+--- PASS: Test_destroyOverlayFS (0.04s)
+PASS
+ok      hind/container  0.044s
+```

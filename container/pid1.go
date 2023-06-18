@@ -16,7 +16,7 @@ import (
 //
 // It returns the command and a pipe to send init command to the process.
 // The command is executed in the host.
-func NewParentProcess(tty bool, cmdPipeR *os.File) (cmd *exec.Cmd) {
+func NewParentProcess(container *Container, cmdPipeR *os.File) (cmd *exec.Cmd) {
 	cmd = exec.Command("/proc/self/exe", "init")
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -27,7 +27,7 @@ func NewParentProcess(tty bool, cmdPipeR *os.File) (cmd *exec.Cmd) {
 			syscall.CLONE_NEWIPC,
 	}
 
-	if tty {
+	if container.TTY {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
@@ -57,7 +57,7 @@ func RunContainerInitProcess() error {
 }
 
 // recvAndCheckConfig wraps recvCommand.
-func recvAndCheckConfig() (*ConatinerConfig, error) {
+func recvAndCheckConfig() (*InContainerConfig, error) {
 	config, err := recvConfig()
 	if err != nil {
 		slog.Error("[container] pid 1 failed to receive config.", "err", err)
@@ -95,7 +95,8 @@ func setupMount(rootDir string) {
 	// 挂进程: NOEXEC: 不允许其他程序运行，NOSUID 不允许 set uid
 	syscall.Mount("proc", "/proc", "proc", uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), "")
 
-	syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
+	// TODO: 隔离设备环境
+	// syscall.Mount("tmpfs", "/dev", "tmpfs", syscall.MS_NOSUID|syscall.MS_STRICTATIME, "mode=755")
 }
 
 // pivotRoot changes the root file system to the path newRoot.
