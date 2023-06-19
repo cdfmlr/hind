@@ -91,6 +91,8 @@ mkdir hello-world && tar -xvf hello-world.tar -C hello-world
 ./hello-world/hello # 里面打包的一个可执行文件，本机可运行
 ```
 
+> ⚠️ [`be4680c`](https://github.com/cdfmlr/hind/commit/be4680cd88f90cafbab888600d8e592474425b2e) 开始，支持了 OverlayFS，可以直接用 docker export 得到的 tar 包作为 hind 镜像。一般情况下，不再需要手动解压。详见下文 [OverlayFS](#OverlayFS)。
+
 在容器运行 `hind run -ti <image> <command>`，其中 image 为解压出来的镜像根目录：
 
 ```sh
@@ -141,3 +143,18 @@ ok      hind/container  0.008s
 PASS
 ok      hind/container  0.044s
 ```
+
+### OverlayFS
+
+Hind 支持 overlay file system，即在一个只读的「镜像」上，再叠加一个可写的「容器层」。
+容器层的修改不会影响到只读镜像，也不会影响到其他使用同一个只读镜像的其他容器。
+容器层会在容器退出时被销毁。
+
+```sh
+$ sudo hind run -ti images/alpine.tar sh
+```
+
+- overlay 功能默认启用：在 hind run 时，会创建临时目录作为容器层，并在容器退出时被销毁之。
+   - 若 IMAGE 参数为 tar 包，则 hind 会自动解压 tar 包到临时目录，并使用该解压出来的目录作为镜像。该目录会在容器退出时被销毁。
+   - 若 IMAGE 参数为目录，则 hind 会直接使用该目录作为镜像层。OverlayFS 保证该目录不会被容器修改。容器退出时，不会销毁该目录。
+   - 若希望禁用 overlay 功能，可以使用 `--no-overlay` 参数。`--no-overlay` 要求 IMAGE 参数为目录，否则强制使用 overlay。禁用 overlay 功能时，容器直接使用 IMAGE 参数指定的目录作为根目录，并且拥有对该目录的**读写**权限。容器退出时，不会销毁该目录，容器所修改的内容会被保留。

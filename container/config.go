@@ -49,25 +49,21 @@ type InContainerConfig struct {
 	Command []string
 }
 
-// sendConfig writes the init command to the pipe.
-// The command is json encoded:
-//
-//	["/bin/sh", "-c", "echo hello"]
+// sendConfig writes the InContainerConfig to the pipe.
+// The command is json encoded.
 //
 // This function is executed in the host.
-// Use recvCommand() in the container to read the sent command.
+// Use recvConfig() in the container to read the sent command.
 func sendConfig(config *InContainerConfig, cmdPipeW io.Writer) error {
 	if config == nil {
-		return fmt.Errorf("sendCommand: config is nil.")
+		return fmt.Errorf("sendCommand: config is nil")
 	}
 	slog.Debug("sendCommand: Sending command", "config", config)
 	return json.NewEncoder(cmdPipeW).Encode(config)
 }
 
-// recvConfig reads the command sent by sendCommand() through the pipe.
-// The received command should be json encoded:
-//
-//	["/bin/sh", "-c", "echo hello"]
+// recvConfig reads the InContainerConfig sent by sendConfig() through the pipe.
+// The received config should be json encoded.
 //
 // This function is executed in the container.
 func recvConfig() (*InContainerConfig, error) {
