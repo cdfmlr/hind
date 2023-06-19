@@ -39,6 +39,9 @@ func Run(container *Container) error {
 	container.Process = containerExe.Process
 	slog.Info("[host] container process started.", "pid", container.Process.Pid)
 
+	// the work dir should be cleaned up at the very end. So it is deferred first.
+	defer cleanupWorkDir(container)
+
 	// cgroup setup
 	cgroupCleanup, err := setupCgroup(container)
 	if err != nil {
@@ -152,6 +155,8 @@ func setupCgroup(container *Container) (cleanUpFunc, error) {
 
 	return func() {
 		cgroupManager.Destroy()
+		// TODO: get cgroup name
+		slog.Info("[host] Cgroup destroyed.", "manager", cgroupManager)
 	}, nil
 }
 
@@ -160,15 +165,17 @@ func setupRootDir(container *Container) (cleanUpFunc, error) {
 		panic("setupRootDir: invalid container.")
 	}
 
+	st, err := os.Stat(container.ImagePath)
+	if err != nil {
+		return func() {}, fmt.Errorf("failed to stat image path: %w", err)
+	}
+	if !st.IsDir() && !container.Overlay {
+		slog.Warn("[host] image is not a directory. OverlayFS is forced on.", "imagePath", container.ImagePath)
+		container.Overlay = true
+	}
+
 	if !container.Overlay {
-		slog.Warn("[host] Overlay is disabled. "+
-			"The container will be run in the image directory directly "+
-			"and it could modify anything in this directory. "+
-			"This could be dangerous."+
-			"We seriously recommend you to think twice before you continue. "+
-			"The program is now pause for 5 seconds... Press Ctrl+C to exit.",
-			"ImagePath", container.ImagePath)
-		time.Sleep(5 * time.Second)
+		noOverlayAlert(container)
 		container.InContainerConfig.RootDir = container.ImagePath
 		return func() {}, nil
 	}
@@ -178,11 +185,37 @@ func setupRootDir(container *Container) (cleanUpFunc, error) {
 	if err := makeOverlayFS(container); err != nil {
 		return func() {}, fmt.Errorf("failed to make overlayfs: %w", err)
 	}
+	container.InContainerConfig.RootDir = container.overlayMergedDir()
+	slog.Info("[host] OverlayFS setup done. InContainerConfig.RootDir -> overlayMergedDir", "mergedDir", container.InContainerConfig.RootDir)
 
 	return func() {
 		destroyOverlayFS(container)
+		slog.Info("[host] cleanupOverlayFS: overlayfs destroyed.", "removed", container.overlayRootDir())
 	}, nil
+}
+
+func cleanupWorkDir(container *Container) {
+	if container != nil && container.WorkDir == defaultWorkDir(container.ID) {
+		if err := os.RemoveAll(container.WorkDir); err != nil {
+			slog.Error("[host] Failed to remove the tmp work dir.", "err", err)
+		}
+	}
+
+	slog.Info("[host] cleanupWorkDir: tmp work dir cleanup.", "removed", container.WorkDir)
 }
 
 // cleanUpFunc is context.CancelFunc
 type cleanUpFunc func()
+
+// TODO: mv this to cmd package. This is not a host function, but a ux design.
+func noOverlayAlert(container *Container) {
+	pauseTime := 1 * time.Second
+	slog.Warn("[host] No image found. "+
+		"The container will be run in the image directory directly "+
+		"and it could modify anything in this directory. "+
+		"This could be dangerous."+
+		"We seriously recommend you to think twice before you continue. "+
+		fmt.Sprintf("The program is now pausing for %v... Press Ctrl+C to abort.", pauseTime),
+		"ImagePath", container.ImagePath)
+	time.Sleep(pauseTime)
+}

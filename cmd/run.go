@@ -12,9 +12,11 @@ import (
 )
 
 type runOptions struct {
+	Name        string
 	Tty         bool
 	Interactive bool
 	Image       string
+	NoOverlay   bool
 	Command     []string // COMMAND ARG...
 	Resources   cgroups.Resources
 }
@@ -23,7 +25,18 @@ func runCommand() *cobra.Command {
 	opts := runOptions{}
 
 	var cmd = &cobra.Command{
-		Use:   "run [flags] IMAGE [COMMAND] [ARG...]",
+		Use: `run [flags] IMAGE COMMAND [ARG...]
+
+Args:
+  IMAGE       The image to run. Can be a directory or a tar file. 
+              If it is a directory, it is used as the rootfs of 
+              the container; if it is a tar file, it is extracted 
+              to a temporary directory and used as the rootfs of 
+              the container. See also --no-overlay.
+  COMMAND     The command to run in the container. 
+              Different from docker, the command is required.
+  [ARG...]    The arguments to the command.
+		`,
 		Short: "Create and run a new container",
 		Long:  `Create and run a new container with namespace and cgroups limit.`,
 		Args:  cobra.MinimumNArgs(1),
@@ -57,8 +70,11 @@ func runCommand() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
+
+	flags.StringVar(&opts.Name, "name", "", "Assign a name to the container")
 	flags.BoolVarP(&opts.Tty, "tty", "t", false, "Allocate a pseudo-TTY")
 	flags.BoolVarP(&opts.Interactive, "interactive", "i", false, "Keep STDIN open")
+	flags.BoolVar(&opts.NoOverlay, "no-overlay", false, "Do not use overlayfs. Directly use the IMAGE as rootfs (read-write). Require IMAGE to be a directory.")
 
 	// resources
 	flags.Int64Var((*int64)(&opts.Resources.CpuQuotaUs), "cpu-quota-us", 0, "The CPU hardcap limit (in usecs). Allowed cpu time in a given period.")
@@ -78,8 +94,10 @@ func runRun(opts runOptions) {
 	slog.Info("[cmd/run] Create and run a new container.", "opts", opts)
 
 	c := &container.Container{
+		Name:      opts.Name,
 		TTY:       opts.Tty || opts.Interactive,
 		ImagePath: opts.Image,
+		Overlay:   !opts.NoOverlay,
 		Command:   opts.Command,
 		Resources: &opts.Resources,
 	}

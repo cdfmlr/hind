@@ -17,7 +17,14 @@ type overlayConfig = Container
 
 // overlayRootDir is a tmp dir to create & mount the overlay filesystem.
 func (c overlayConfig) overlayRootDir() string {
-	return path.Join(c.WorkDir, "/overlay-"+c.ID)
+	return path.Join(c.WorkDir, "/overlay-"+shortID(c.ID, 4))
+}
+
+func shortID(id string, maxLen int) string {
+	if len(id) < maxLen {
+		return id
+	}
+	return id[:maxLen]
 }
 
 // overlayLowerDir is the lower directory (read-only image layer)
@@ -157,7 +164,7 @@ func mountOverlayFS(lowerdir string, upperdir string, workdir string, mountpoint
 		"-o", fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lowerdir, upperdir, workdir),
 		mountpoint)
 
-	slog.Info("DBG [host] mounting overlayfs.", "command", mountCmd.String())
+	slog.Debug("[host] mounting overlayfs.", "command", mountCmd.String())
 
 	if err := mountCmd.Run(); err != nil {
 		return fmt.Errorf("error mounting overlayfs: %w", err)
