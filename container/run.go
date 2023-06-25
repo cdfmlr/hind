@@ -134,6 +134,11 @@ func defaultWorkDir(containerID string) string {
 	return path.Join(os.TempDir(), "hind", "container", containerID)
 }
 
+const (
+	DefaultCgroupBasePath = "/sys/fs/cgroup/"
+	DefaultCgroupHind     = "hind"
+)
+
 func setupCgroup(container *Container) (cleanUpFunc, error) {
 	if container == nil || container.Process == nil || container.Resources == nil {
 		panic("setupCgroup: invalid container.")
@@ -141,7 +146,17 @@ func setupCgroup(container *Container) (cleanUpFunc, error) {
 
 	res := *container.Resources
 
-	cgroupManager, err := cgroups.NewV1fsManager("/sys/fs/cgroup/", "hind/container")
+	// always try to reinit the parent (/sys/fs/cgroup/<subsystem>/hind/)
+	// echo 0 > {cpuset.cpus, cpuset.mems} to make it available.
+	_, err := cgroups.NewV1fsManager(DefaultCgroupBasePath, DefaultCgroupHind) // NewV1fsManager contains Create.
+	if err != nil {
+		slog.Error("[host] Failed to create cgroup manager.", "err", err)
+		return func() {}, err
+	}
+
+	// the cgroup for current container: /sys/fs/cgroup/<subsystem>/hind/<containerID>
+	cgroupManager, err := cgroups.NewV1fsManager(DefaultCgroupBasePath,
+		DefaultCgroupHind+"/"+container.ID)
 	if err != nil {
 		slog.Error("[host] Failed to create cgroup manager.", "err", err)
 		return func() {}, err

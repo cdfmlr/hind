@@ -6,8 +6,10 @@ package cgroups
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"reflect"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/exp/slog"
@@ -61,7 +63,7 @@ func (v *V1fsManager) Create(name string) error {
 		}
 	}
 
-	// In my practice, the cpuset.cpus and cpuset.mems are required 
+	// In my practice, the cpuset.cpus and cpuset.mems are required
 	// to be set first, or any other resources will fail to set.
 	if err := v.setResource(CpuSetCpus("0")); err != nil {
 		return fmt.Errorf("error init cpuset.cpus: %w", err)
@@ -126,8 +128,20 @@ func (v *V1fsManager) setResource(r Resource) error {
 	return err
 }
 
+// Destroy destroys the cgroup by calling cgdelete(1):
+//
+//	cgdelete --recursive <controllers>:<cgroupName>
 func (v *V1fsManager) Destroy() {
-	slog.Warn("[cgroups] TODO: V1fsManager.Destroy()")
+	slog.Info("[cgroups] Destroy: do cgdelete.", "cgroupName", v.cgroupName)
+
+	subsustems := strings.Join(supportedSubsystem(), ",")
+
+	delete := exec.Command("cgdelete", "--recursive", subsustems+":"+v.cgroupName)
+	if err := delete.Run(); err != nil {
+		slog.Error("[cgroups] Destroy: cgdelete failed.", "err", err)
+	}
+
+	v.cgroupName = ""
 }
 
 // -- path methods --
